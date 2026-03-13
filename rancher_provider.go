@@ -204,3 +204,106 @@ func computeCompsedRancherProvider(secretName string, secretResourceName string,
 
 	return nil
 }
+
+func generateToken(name string, providerCredentialRequest *input.ProviderCredentialRequest, requirement map[string][]resource.Required) (token string, err error) {
+	var (
+		username string
+		password string
+	)
+
+	// Get username from requirement
+	if v, ok := requirement[fmt.Sprintf("%s_%s_username", name, providerCredentialRequest.Name)]; ok {
+		usernameB64, err := fieldpath.Pave(v[0].Resource.Object).GetString("data." + providerCredentialRequest.UsernameSecretRef.Key)
+		if err != nil {
+			if fieldpath.IsNotFound(err) {
+				return "", errors.Errorf("rancher username secret %q does not contain key %q", providerCredentialRequest.UsernameSecretRef.Name, providerCredentialRequest.UsernameSecretRef.Key)
+			}
+
+			return "", errors.Wrapf(err, "fetching rancher username secret %q", providerCredentialRequest.UsernameSecretRef.Name)
+		}
+
+		usernameBytes, err := base64.StdEncoding.DecodeString(usernameB64)
+		if err != nil {
+			return "", errors.Wrapf(err, "decoding rancher username secret %q", providerCredentialRequest.UsernameSecretRef.Name)
+		}
+
+		username = string(usernameBytes)
+	} else {
+		return "", errors.Errorf("Rancher username secret %q not found in required resources", providerCredentialRequest.UsernameSecretRef.Name)
+	}
+
+	// Get password from requirement
+	if v, ok := requirement[fmt.Sprintf("%s_%s_password", name, providerCredentialRequest.Name)]; ok {
+		passwordB64, err := fieldpath.Pave(v[0].Resource.Object).GetString("data." + providerCredentialRequest.PasswordSecretRef.Key)
+		if err != nil {
+			if fieldpath.IsNotFound(err) {
+				return "", errors.Errorf("rancher password secret %q does not contain key %q", providerCredentialRequest.PasswordSecretRef.Name, providerCredentialRequest.PasswordSecretRef.Key)
+			}
+
+			return "", errors.Wrapf(err, "fetching rancher password secret %q", providerCredentialRequest.PasswordSecretRef.Name)
+		}
+
+		passwordBytes, err := base64.StdEncoding.DecodeString(passwordB64)
+		if err != nil {
+			return "", errors.Wrapf(err, "decoding rancher password secret %q", providerCredentialRequest.PasswordSecretRef.Name)
+		}
+
+		password = string(passwordBytes)
+	} else {
+		return "", errors.Errorf("Rancher password secret %q not found in required resources", providerCredentialRequest.PasswordSecretRef.Name)
+	}
+
+	authType := map[string]string{
+		"local":           "local",
+		"activedirectory": "activeDirectory",
+		"adfs":            "adfs",
+		"azuread":         "azureAD",
+		"freeipa":         "freeIpa",
+		"generic_oidc":    "generic_oidc",
+		"github":          "github",
+		"keycloak":        "keyCloak",
+		"okta":            "okta",
+		"openldap":        "openLdap",
+		"ping":            "ping",
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"type":        fmt.Sprintf("%sProvider", authType[providerCredentialRequest.AuthProvider]),
+		"username":    username,
+		"password":    password,
+		"ttl":         providerCredentialRequest.TTL,
+		"description": fmt.Sprintf("Rancher provider %s", providerCredentialRequest.Name),
+	})
+	if err != nil {
+		return "", errors.Wrapf(err, "Marshalling login data: %v", providerCredentialRequest.Name)
+	}
+
+	loginURL := fmt.Sprintf("%s/v3-public/%sProviders/%s?action=login", providerCredentialRequest.Url, authType[providerCredentialRequest.AuthProvider], providerCredentialRequest.AuthProvider)
+
+	loginHead := map[string]string{
+		"Accept":       "application/json",
+		"Content-Type": "application/json",
+	}
+
+	// Login with user and pass
+	respBody, _, err := DoPost(loginURL, string(payload), "", true, loginHead)
+
+	if err != nil {
+		return "", errors.Wrapf(err, "error when get token %s", providerCredentialRequest.Name)
+	}
+
+	if respBody["token"] != nil {
+		token, _ = respBody["token"].(string)
+	}
+
+	if token == "" {
+		return "", errors.Errorf("Token is empty for %s with response %v", providerCredentialRequest.Name, respBody)
+	}
+
+	_, _, ok := strings.Cut(token, ":")
+	if !ok {
+		return "", errors.Errorf("Token format is invalid for %s with token %s", providerCredentialRequest.Name, token)
+	}
+
+	return token, nil
+}
