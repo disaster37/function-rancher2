@@ -20,6 +20,7 @@ import (
 	input "github.com/disaster37/function-rancher2/input/v1beta1"
 	rancherk8s "github.com/disaster37/provider-rancher2/apis/namespaced/k8s/v1"
 	rancherProvider "github.com/disaster37/provider-rancher2/apis/namespaced/v1beta1"
+
 	"github.com/rancher/terraform-provider-rancher2/rancher2"
 	corev1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -43,6 +44,10 @@ type Function struct {
 // RunFunction runs the Function.
 func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
 	f.log.Info("Running function", "tag", req.GetMeta().GetTag())
+
+	utilruntime.Must(rancherk8s.AddToScheme(scheme))
+	utilruntime.Must(rancherProvider.SchemeBuilder.AddToScheme(scheme))
+	utilruntime.Must(corev1.AddToScheme(scheme))
 
 	rsp := response.To(req, response.DefaultTTL)
 
@@ -158,8 +163,6 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 	// Compute projects
 	if len(in.ImportProjects) > 0 {
 
-		utilruntime.Must(rancherk8s.AddToScheme(scheme))
-
 		if err := f.ImportProjects(ctx, name, currentNamespace, labels, rancherClient, in.ImportProjects, desired, rsp); err != nil {
 			response.ConditionFalse(rsp, "FunctionSuccess", "InternalError").
 				WithMessage("Something went wrong to import projects").
@@ -171,7 +174,6 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 	}
 
 	if len(in.GenerateRancherProviderCredentials) > 0 {
-		utilruntime.Must(rancherProvider.SchemeBuilder.AddToScheme(scheme))
 
 		if err := f.GenerateRancherProviders(ctx, name, currentNamespace, labels, rancherClient, in.GenerateRancherProviderCredentials, desired, observed, requirements, rsp); err != nil {
 			response.ConditionFalse(rsp, "FunctionSuccess", "InternalError").
@@ -233,16 +235,7 @@ func (f *Function) HandleResourceRequirements(ctx context.Context, currentNamesp
 			return errors.New("GenerateRancherProviderCredential name is empty")
 		}
 
-		extraResources[fmt.Sprintf("%s_%s_credential", name, providerCredentialRequest.Name)] = &fnv1.ResourceSelector{
-			ApiVersion: "v1",
-			Kind:       "Secret",
-			Match: &fnv1.ResourceSelector_MatchName{
-				MatchName: fmt.Sprintf("%s-credential", providerCredentialRequest.Name),
-			},
-			Namespace: &currentNamespace,
-		}
-
-		extraResources[fmt.Sprintf("%s_%s_username", name, providerCredentialRequest.Name)] = &fnv1.ResourceSelector{
+		extraResources[strings.ReplaceAll(fmt.Sprintf("%s_username", providerCredentialRequest.Name), "-", "_")] = &fnv1.ResourceSelector{
 			ApiVersion: "v1",
 			Kind:       "Secret",
 			Match: &fnv1.ResourceSelector_MatchName{
@@ -251,7 +244,7 @@ func (f *Function) HandleResourceRequirements(ctx context.Context, currentNamesp
 			Namespace: &currentNamespace,
 		}
 
-		extraResources[fmt.Sprintf("%s_%s_password", name, providerCredentialRequest.Name)] = &fnv1.ResourceSelector{
+		extraResources[strings.ReplaceAll(fmt.Sprintf("%s_password", providerCredentialRequest.Name), "-", "_")] = &fnv1.ResourceSelector{
 			ApiVersion: "v1",
 			Kind:       "Secret",
 			Match: &fnv1.ResourceSelector_MatchName{
@@ -307,8 +300,8 @@ func (f *Function) GetRancherCredentials(ctx context.Context, currentNamespace s
 // GetRancherClient returns a rancher client with the given rancher credential reference.
 func (f *Function) GetRancherClient(ctx context.Context, currentNamespace string, rancherCredential map[string]string, rsp *fnv1.RunFunctionResponse) (client *rancher2.Config, err error) {
 
-	if v, ok := rancherCredential["url"]; !ok || v == "" {
-		return nil, errors.New("Rancher credential url is missing or empty")
+	if v, ok := rancherCredential["api_url"]; !ok || v == "" {
+		return nil, errors.New("Rancher credential api_url is missing or empty")
 	}
 
 	if v, ok := rancherCredential["token_key"]; !ok || v == "" {
@@ -316,7 +309,7 @@ func (f *Function) GetRancherClient(ctx context.Context, currentNamespace string
 	}
 
 	options := &rancher2.Config{
-		URL:      rancherCredential["url"],
+		URL:      rancherCredential["api_url"],
 		TokenKey: rancherCredential["token_key"],
 	}
 

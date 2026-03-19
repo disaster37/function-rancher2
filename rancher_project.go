@@ -11,11 +11,11 @@ import (
 	fnv1 "github.com/crossplane/function-sdk-go/proto/v1"
 	"github.com/crossplane/function-sdk-go/resource"
 	"github.com/crossplane/function-sdk-go/resource/composed"
+	input "github.com/disaster37/function-rancher2/input/v1beta1"
 	rancherk8s "github.com/disaster37/provider-rancher2/apis/namespaced/k8s/v1"
 	"github.com/rancher/terraform-provider-rancher2/rancher2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-	input "github.com/disaster37/function-rancher2/input/v1beta1"
 )
 
 // ImportProjects imports projects by name with the given rancher client and project requests. The project requests contain the project name and cluster name to search project ID. If both projectName and projectID are specified, projectID will be used.
@@ -43,7 +43,7 @@ func (f *Function) ImportProject(ctx context.Context, name string, currentNamesp
 	// Generate the project import
 	project := &rancherk8s.Project{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      strings.ToLower(fmt.Sprintf("%s-%s-%s", name, projectRequest.ClusterName, projectRequest.Name)),
+			Name:      strings.ToLower(fmt.Sprintf("%s-%s", projectRequest.ClusterName, projectRequest.Name)),
 			Namespace: currentNamespace,
 			Labels:    labels,
 			Annotations: map[string]string{
@@ -68,7 +68,7 @@ func (f *Function) ImportProject(ctx context.Context, name string, currentNamesp
 		return errors.Wrap(err, "error when convert project to unstructured")
 	}
 
-	desired[resource.Name(fmt.Sprintf("%s_%s_%s", name, projectRequest.ClusterName, projectRequest.Name))] = &resource.DesiredComposed{Resource: cd}
+	desired[resource.Name(fmt.Sprintf("%s_%s", projectRequest.ClusterName, projectRequest.Name))] = &resource.DesiredComposed{Resource: cd}
 
 	return nil
 }

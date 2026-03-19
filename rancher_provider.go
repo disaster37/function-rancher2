@@ -35,9 +35,9 @@ func (f *Function) GenerateRancherProviders(ctx context.Context, name string, cu
 // GenerateRancherProvider generates a rancher provider credential and provider with the given rancher client and provider credential request. The provider credential request contains the information to generate the rancher provider credential and provider. If the token already exist and is still valid, it will reuse the existing token instead of generating a new one.
 func (f *Function) GenerateRancherProvider(ctx context.Context, name string, currentNamespace string, labels map[string]string, rancherClient *rancher2.Config, providerCredentialRequest *input.ProviderCredentialRequest, desired map[resource.Name]*resource.DesiredComposed, observed map[resource.Name]resource.ObservedComposed, requirement map[string][]resource.Required, rsp *fnv1.RunFunctionResponse) (err error) {
 
-	secretResourceName := fmt.Sprintf("%s_%s_credential", name, providerCredentialRequest.Name)
-	secretName := fmt.Sprintf("%s-credential", name, providerCredentialRequest.Name)
-	providerResourceName := fmt.Sprintf("%s_%s_provider", name, providerCredentialRequest.Name)
+	secretResourceName := strings.ReplaceAll(fmt.Sprintf("%s_credential", providerCredentialRequest.Name), "-", "_")
+	secretName := fmt.Sprintf("%s-credential", providerCredentialRequest.Name)
+	providerResourceName := strings.ReplaceAll(fmt.Sprintf("%s_provider", providerCredentialRequest.Name), "-", "_")
 
 	// Check if token already exist and if is still valid
 	token, renew, err := getExistingRancherToken(rancherClient, observed, secretResourceName, secretName)
@@ -91,13 +91,22 @@ func getExistingRancherToken(rancherClient *rancher2.Config, observed map[resour
 
 			tmpRancherClient, err := managementClient.NewClient(options)
 			if err != nil {
-				return "", false, errors.Wrap(err, "cannot create rancher client with token")
+				if !IsNotFound(err) && !IsForbidden(err) && !IsUnauthorized(err) {
+					return "", false, errors.Wrap(err, "cannot create rancher client with token")
+				}
+
+				return "", true, nil
 			}
 
 			tokenId := strings.Split(v, ":")[0]
 			tokenTmp, err := tmpRancherClient.Token.ByID(tokenId)
-			if err != nil && !IsNotFound(err) && !IsForbidden(err) {
-				return "", false, errors.Wrapf(err, "cannot get token by ID %s", tokenId)
+			if err != nil {
+				if !IsNotFound(err) && !IsForbidden(err) && !IsUnauthorized(err) {
+					return "", false, errors.Wrapf(err, "cannot get token by ID %s", tokenId)
+				}
+
+				return "", true, nil
+
 			} else {
 				if !*tokenTmp.Enabled || tokenTmp.Expired {
 					renew = true
@@ -107,7 +116,7 @@ func getExistingRancherToken(rancherClient *rancher2.Config, observed map[resour
 			}
 		}
 	} else {
-		return "", false, errors.New("Rancher provider secret credential not found in observed resources")
+		return "", true, nil
 	}
 
 	return token, renew, nil
@@ -170,7 +179,10 @@ func computeCompsedRancherProvider(secretName string, secretResourceName string,
 		if err != nil {
 			return errors.Wrap(err, "error when convert secret to unstructured")
 		}
+
 		desired[resource.Name(providerResourceName)] = &resource.DesiredComposed{Resource: cd}
+		desired[resource.Name(providerResourceName)].Ready = resource.ReadyTrue
+
 	} else if providerCredentialRequest.Type == "ClusterProviderConfig" {
 		rancherProvider := &rancherProvider.ClusterProviderConfig{
 			ObjectMeta: metav1.ObjectMeta{
@@ -212,7 +224,7 @@ func generateToken(name string, providerCredentialRequest *input.ProviderCredent
 	)
 
 	// Get username from requirement
-	if v, ok := requirement[fmt.Sprintf("%s_%s_username", name, providerCredentialRequest.Name)]; ok {
+	if v, ok := requirement[strings.ReplaceAll(fmt.Sprintf("%s_username", providerCredentialRequest.Name), "-", "_")]; ok {
 		usernameB64, err := fieldpath.Pave(v[0].Resource.Object).GetString("data." + providerCredentialRequest.UsernameSecretRef.Key)
 		if err != nil {
 			if fieldpath.IsNotFound(err) {
@@ -233,7 +245,7 @@ func generateToken(name string, providerCredentialRequest *input.ProviderCredent
 	}
 
 	// Get password from requirement
-	if v, ok := requirement[fmt.Sprintf("%s_%s_password", name, providerCredentialRequest.Name)]; ok {
+	if v, ok := requirement[strings.ReplaceAll(fmt.Sprintf("%s_password", providerCredentialRequest.Name), "-", "_")]; ok {
 		passwordB64, err := fieldpath.Pave(v[0].Resource.Object).GetString("data." + providerCredentialRequest.PasswordSecretRef.Key)
 		if err != nil {
 			if fieldpath.IsNotFound(err) {
@@ -278,7 +290,7 @@ func generateToken(name string, providerCredentialRequest *input.ProviderCredent
 		return "", errors.Wrapf(err, "Marshalling login data: %v", providerCredentialRequest.Name)
 	}
 
-	loginURL := fmt.Sprintf("%s/v3-public/%sProviders/%s?action=login", providerCredentialRequest.Url, authType[providerCredentialRequest.AuthProvider], providerCredentialRequest.AuthProvider)
+	loginURL := fmt.Sprintf("%s/v1-public/login", providerCredentialRequest.Url)
 
 	loginHead := map[string]string{
 		"Accept":       "application/json",

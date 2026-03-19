@@ -29,3 +29,13 @@ func IsForbidden(err error) bool {
 
 	return apiError.StatusCode == http.StatusForbidden
 }
+
+// IsUnauthorized checks if the given APIError is an Unauthorized HTTP statuscode
+func IsUnauthorized(err error) bool {
+	apiError, ok := err.(*clientbase.APIError)
+	if !ok {
+		return false
+	}
+
+	return apiError.StatusCode == http.StatusUnauthorized
+}

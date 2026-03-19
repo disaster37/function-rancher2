@@ -10,7 +10,7 @@ package:
 
 push:
 	up xpkg push \
-  		disaster37/function-rancher2:v0.0.12 \
+  		disaster37/function-rancher2:v0.0.21 \
 		-f ./function-amd64.xpkg
 
 .PHONY: generate package push
