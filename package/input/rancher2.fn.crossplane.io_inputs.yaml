@@ -28,6 +28,18 @@ spec:
               may reject unrecognized values.
               More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
+          delims:
+            description: Template delimiters
+            properties:
+              left:
+                default: '{{'
+                description: Template start characters
+                type: string
+              right:
+                default: '}}'
+                description: Template end characters
+                type: string
+            type: object
           generateRancherProviderCredentials:
             description: To generate a provider credential with rancher provider,
               you can use this field to specify the provider credential to generate.
@@ -83,6 +95,85 @@ spec:
                 url:
                   description: The rancher URL to generate the provider credential
                     for.
+                  type: string
+                usernameSecretRef:
+                  description: UsernameSecretRef is the reference to the secret key
+                    that contains the username to authenticate to rancher.
+                  properties:
+                    key:
+                      description: The key of the secret to select from.  Must be
+                        a valid secret key.
+                      type: string
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                    optional:
+                      description: Specify whether the Secret or its key must be defined
+                      type: boolean
+                  required:
+                  - key
+                  type: object
+                  x-kubernetes-map-type: atomic
+              required:
+              - authProvider
+              - name
+              - passwordSecretRef
+              - ttl
+              - url
+              - usernameSecretRef
+              type: object
+            type: array
+          generateTokens:
+            description: To generate token and inject into context
+            items:
+              description: GenerateTokenRequest is used to specify credentials to
+                generate token and inject into context.
+              properties:
+                authProvider:
+                  default: local
+                  description: The auth provider
+                  type: string
+                name:
+                  description: The context key to inject the generated token into
+                    context.
+                  type: string
+                passwordSecretRef:
+                  description: PasswordSecretRef is the reference to the secret key
+                    that contains the password to authenticate to rancher.
+                  properties:
+                    key:
+                      description: The key of the secret to select from.  Must be
+                        a valid secret key.
+                      type: string
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                    optional:
+                      description: Specify whether the Secret or its key must be defined
+                      type: boolean
+                  required:
+                  - key
+                  type: object
+                  x-kubernetes-map-type: atomic
+                ttl:
+                  default: 0
+                  description: The TTL when generate token for provider
+                  format: int64
+                  type: integer
+                url:
+                  description: The rancher URL
                   type: string
                 usernameSecretRef:
                   description: UsernameSecretRef is the reference to the secret key

@@ -24,6 +24,10 @@ type Input struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
+	// Template delimiters
+	// +optional
+	Delims *Delims `json:"delims,omitempty"`
+
 	// The rancher secret key that store the credentials
 	// +required
 	RancherSecretRef *corev1.SecretKeySelector `json:"rancherSecretRef"`
@@ -35,6 +39,21 @@ type Input struct {
 	// To generate a provider credential with rancher provider, you can use this field to specify the provider credential to generate. If both RancherCredentialRef and GenerateRancherProviderCredential are specified, GenerateRancherProviderCredential will be used.
 	// +optional
 	GenerateRancherProviderCredentials []*ProviderCredentialRequest `json:"generateRancherProviderCredentials,omitempty"`
+
+	// To generate token and inject into context
+	GenerateTokens []*GenerateTokenRequest `json:"generateTokens,omitempty"`
+}
+
+// Delims defines the structure for customizing template delimiters.
+type Delims struct {
+	// Template start characters
+	// +kubebuilder:default:="{{"
+	// +optional
+	Left *string `json:"left,omitempty"`
+	// Template end characters
+	// +kubebuilder:default:="}}"
+	// +optional
+	Right *string `json:"right,omitempty"`
 }
 
 // Project is used to specify the project name and cluster name to search project ID. If both projectName and projectID are specified, projectID will be used.
@@ -70,6 +89,36 @@ type ProviderCredentialRequest struct {
 	Url string `json:"url"`
 
 	// The auth provider to use to generate the provider credential.
+	// +required
+	// +kubebuilder:default:="local"
+	AuthProvider string `json:"authProvider"`
+
+	// UsernameSecretRef is the reference to the secret key that contains the username to authenticate to rancher.
+	// +required
+	UsernameSecretRef corev1.SecretKeySelector `json:"usernameSecretRef"`
+
+	// PasswordSecretRef is the reference to the secret key that contains the password to authenticate to rancher.
+	// +required
+	PasswordSecretRef corev1.SecretKeySelector `json:"passwordSecretRef"`
+
+	// The TTL when generate token for provider
+	// +required
+	// +kubebuilder:default:=0
+	TTL int64 `json:"ttl"`
+}
+
+// GenerateTokenRequest is used to specify credentials to generate token and inject into context.
+type GenerateTokenRequest struct {
+
+	// The context key to inject the generated token into context.
+	// +required
+	Name string `json:"name"`
+
+	// The rancher URL
+	// +required
+	Url string `json:"url"`
+
+	// The auth provider
 	// +required
 	// +kubebuilder:default:="local"
 	AuthProvider string `json:"authProvider"`

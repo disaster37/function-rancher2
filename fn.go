@@ -28,6 +28,7 @@ import (
 
 const (
 	credKey = "credentials"
+	Key     = "rancher2.fn.crossplane.io"
 )
 
 var (
@@ -141,6 +142,11 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 			f.log.Info("Waiting for rancher secret to be available", "requirements", rsp.GetRequirements())
 			return rsp, nil
 		}
+
+		if IsErrRancherCredentialsNotFound(err) {
+			f.log.Info("Rancher credentials not found in required resources, waiting for it to be available", "requirements", rsp.GetRequirements())
+			return rsp, nil
+		}
 		response.ConditionFalse(rsp, "FunctionSuccess", "InternalError").
 			WithMessage("Something went wrong to get Rancher credentials").
 			TargetCompositeAndClaim()
@@ -152,6 +158,11 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 	// Get Rancher client
 	rancherClient, err := f.GetRancherClient(ctx, currentNamespace, credentials, rsp)
 	if err != nil {
+
+		if IsErrRancherTokenNotFound(err) {
+			f.log.Info("Rancher token not found in credentials, waiting for it to be available")
+			return rsp, nil
+		}
 		response.ConditionFalse(rsp, "FunctionSuccess", "InternalError").
 			WithMessage("Something went wrong to get Rancher client").
 			TargetCompositeAndClaim()
@@ -173,6 +184,7 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 		}
 	}
 
+	// Compute rancher provider credentials
 	if len(in.GenerateRancherProviderCredentials) > 0 {
 
 		if err := f.GenerateRancherProviders(ctx, name, currentNamespace, labels, rancherClient, in.GenerateRancherProviderCredentials, desired, observed, requirements, rsp); err != nil {
@@ -181,6 +193,19 @@ func (f *Function) RunFunction(ctx context.Context, req *fnv1.RunFunctionRequest
 				TargetCompositeAndClaim()
 
 			response.Fatal(rsp, errors.Wrapf(err, "cannot generate rancher provider credentials from %T", req))
+			return rsp, nil
+		}
+	}
+
+	// Compute rancher tokens
+	if len(in.GenerateTokens) > 0 {
+
+		if err := f.GenerateTokens(ctx, name, currentNamespace, labels, rancherClient, in.GenerateTokens, desired, observed, requirements, rsp); err != nil {
+			response.ConditionFalse(rsp, "FunctionSuccess", "InternalError").
+				WithMessage("Something went wrong to generate rancher tokens").
+				TargetCompositeAndClaim()
+
+			response.Fatal(rsp, errors.Wrapf(err, "cannot generate rancher tokens from %T", req))
 			return rsp, nil
 		}
 	}
@@ -254,6 +279,31 @@ func (f *Function) HandleResourceRequirements(ctx context.Context, currentNamesp
 		}
 	}
 
+	// Handle token requests
+	for _, tokenRequest := range input.GenerateTokens {
+		if tokenRequest.Name == "" {
+			return errors.New("GenerateTokenRequest name is empty")
+		}
+
+		extraResources[strings.ReplaceAll(fmt.Sprintf("%s_username", tokenRequest.Name), "-", "_")] = &fnv1.ResourceSelector{
+			ApiVersion: "v1",
+			Kind:       "Secret",
+			Match: &fnv1.ResourceSelector_MatchName{
+				MatchName: tokenRequest.UsernameSecretRef.Name,
+			},
+			Namespace: &currentNamespace,
+		}
+
+		extraResources[strings.ReplaceAll(fmt.Sprintf("%s_password", tokenRequest.Name), "-", "_")] = &fnv1.ResourceSelector{
+			ApiVersion: "v1",
+			Kind:       "Secret",
+			Match: &fnv1.ResourceSelector_MatchName{
+				MatchName: tokenRequest.PasswordSecretRef.Name,
+			},
+			Namespace: &currentNamespace,
+		}
+	}
+
 	// Add them on the response requirements so that crossplane can pull them before the next call of the function when we can get the credentials and create the rancher client.
 	rsp.Requirements = &fnv1.Requirements{Resources: extraResources}
 
@@ -270,7 +320,7 @@ func (f *Function) HandleResourceRequirements(ctx context.Context, currentNamesp
 func (f *Function) GetRancherCredentials(ctx context.Context, currentNamespace string, name string, rancherSecretRef *corev1.SecretKeySelector, req *fnv1.RunFunctionRequest, requirements map[string][]resource.Required, rsp *fnv1.RunFunctionResponse) (credentials map[string]string, err error) {
 
 	var credentialsBytes []byte
-	if v, ok := requirements[strings.ReplaceAll(fmt.Sprintf("%s_%s", name, rancherSecretRef.Name), "-", "_")]; ok {
+	if v, ok := requirements[strings.ReplaceAll(fmt.Sprintf("%s_%s", name, rancherSecretRef.Name), "-", "_")]; ok && len(v) > 0 {
 		credentialsB64, err := fieldpath.Pave(v[0].Resource.Object).GetString("data." + rancherSecretRef.Key)
 		if err != nil {
 			if fieldpath.IsNotFound(err) {
@@ -285,7 +335,7 @@ func (f *Function) GetRancherCredentials(ctx context.Context, currentNamespace s
 			return nil, errors.Wrap(err, "decoding rancher secret credentials")
 		}
 	} else {
-		return nil, errors.New("Rancher secret credential not found in required resources")
+		return nil, ErrRancherCredentialsNotFound
 	}
 
 	// Unmarshal credentials
@@ -305,7 +355,7 @@ func (f *Function) GetRancherClient(ctx context.Context, currentNamespace string
 	}
 
 	if v, ok := rancherCredential["token_key"]; !ok || v == "" {
-		return nil, errors.New("Rancher credential token_key is missing or empty")
+		return nil, ErrRancherTokenNotFound
 	}
 
 	options := &rancher2.Config{

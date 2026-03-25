@@ -8,12 +8,24 @@ import (
 )
 
 var (
-	ErrWaitRequiredResources = errors.New("Wait required resources")
+	ErrWaitRequiredResources      = errors.New("Wait required resources")
+	ErrRancherCredentialsNotFound = errors.New("Rancher credentials not found")
+	ErrRancherTokenNotFound       = errors.New("Rancher token not found")
 )
 
 // IsErrWaitRequiredResources returns true if the supplied error is or wraps an ErrWaitRequiredResources error.
 func IsErrWaitRequiredResources(err error) bool {
 	return errors.Is(err, ErrWaitRequiredResources)
+}
+
+// IsErrRancherCredentialsNotFound returns true if the supplied error is or wraps an ErrRancherCredentialsNotFound error.
+func IsErrRancherCredentialsNotFound(err error) bool {
+	return errors.Is(err, ErrRancherCredentialsNotFound)
+}
+
+// IsErrRancherTokenNotFound returns true if the supplied error is or wraps an ErrRancherTokenNotFound error.
+func IsErrRancherTokenNotFound(err error) bool {
+	return errors.Is(err, ErrRancherTokenNotFound)
 }
 
 func IsNotFound(err error) bool {

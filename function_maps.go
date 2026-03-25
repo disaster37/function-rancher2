@@ -8,9 +8,9 @@ import (
 	"time"
 
 	sprig "github.com/Masterminds/sprig/v3"
-	"github.com/crossplane-contrib/function-go-templating/input/v1beta1"
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/fieldpath"
+	"github.com/disaster37/function-rancher2/input/v1beta1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/util/json"

@@ -13,12 +13,15 @@ import (
 
 // TemplateResource templates the input resource with the given request and observed composite resource. The templating is done with the resourcetemplate package, which allows to use Go templates with some additional functions to template the resource. The templating result is then unmarshaled back to the input resource.
 func (f *Function) TemplateResource(ctx context.Context, input *input.Input, req *fnv1.RunFunctionRequest) (err error) {
-	inputB, err := json.Marshal(input)
+
+	inputTmp := input.DeepCopy()
+	inputTmp.Delims = nil
+	inputB, err := json.Marshal(inputTmp)
 	if err != nil {
 		return errors.Wrapf(err, "cannot marshal input %T", input)
 	}
 
-	tmpl, err := GetNewTemplateWithFunctionMaps(nil).Parse(string(inputB))
+	tmpl, err := GetNewTemplateWithFunctionMaps(input.Delims).Parse(string(inputB))
 	if err != nil {
 		return errors.Wrap(err, "cannot parse input as template")
 	}
